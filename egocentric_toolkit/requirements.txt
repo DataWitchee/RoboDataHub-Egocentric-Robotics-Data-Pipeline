@@ -1,0 +1,35 @@
+# ============================================================
+# EgoKitchen Robotics Pipeline — Full Requirements
+# Install: pip install -r requirements.txt
+# ============================================================
+
+# ── Core ──────────────────────────────────────────────────
+opencv-python>=4.8.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+numpy>=1.24.0
+Pillow>=9.0.0
+python-dotenv>=1.0.0
+
+# ── Phase 1: Video Exploration ────────────────────────────
+# No extra deps beyond core above
+
+# ── Phase 2: Segmentation ─────────────────────────────────
+scenedetect[opencv]>=0.6.3          # PySceneDetect boundary detection
+open-clip-torch>=2.24.0             # CLIP zero-shot action classification
+torch>=2.0.0
+torchvision>=0.15.0
+
+# ── Phase 3: Object Annotation ───────────────────────────
+ultralytics>=8.0.0                  # YOLOv8 + ByteTrack
+
+# ── Phase 4: NL Descriptions ──────────────────────────────
+transformers>=4.30.0                # BLIP-2 captioning
+accelerate>=0.20.0                  # Required by BLIP-2 for device mapping
+anthropic>=0.25.0                   # Claude API for description refinement
+
+# ── Phase 5: HuggingFace Packaging ────────────────────────
+datasets>=2.14.0                    # HuggingFace DatasetDict
+
+# ── Optional: faster BLIP-2 inference ─────────────────────
+# bitsandbytes>=0.41.0              # Uncomment for 8-bit quantised BLIP-2

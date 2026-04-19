@@ -1,0 +1,26 @@
+node_modules/
+dist/
+build/
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+env/
+.env/
+.venv/
+.python-version
+
+# Datasets / Large media files (Hackathon data)
+# Depending on how the pipeline is set up, don't upload huge videos
+*.zip
+*.mp4
+*.avi
+*.pt
+datasets/
+data/
+
+# Secrets
+.env

@@ -1,0 +1,288 @@
+"""
+=============================================================
+SCRIPT 3: HuggingFace Dataset Card Generator
+=============================================================
+Usage:
+    python generate_dataset_card.py
+
+What it does:
+    • Reads master_dataset.json to compute live statistics
+    • Auto-generates a HuggingFace-format README.md dataset card
+    • Saves to /dataset/final_dataset/README.md
+
+Dependencies:
+    pip install pandas
+=============================================================
+"""
+
+import json
+import sys
+from pathlib import Path
+from collections import Counter
+from datetime import date
+
+import pandas as pd
+
+# ─── CONFIG ────────────────────────────────────────────────
+FINAL_DATASET_DIR = Path("/Users/mannatsaini/Desktop/my_robotics_data/final_dataset")
+MASTER_JSON       = FINAL_DATASET_DIR / "master_dataset.json"
+README_OUT        = FINAL_DATASET_DIR / "README.md"
+DATASET_NAME      = "EgoKitchen-Robotics"
+DATASET_VERSION   = "1.0.0"
+# ───────────────────────────────────────────────────────────
+
+BOLD  = "\033[1m"
+GREEN = "\033[92m"
+RESET = "\033[0m"
+
+
+def load_master(path: Path) -> list[dict]:
+    if not path.exists():
+        print(f"ERROR: {path} not found. Run build_dataset.py first.")
+        sys.exit(1)
+    with open(path) as f:
+        return json.load(f)
+
+
+def compute_stats(records: list[dict]) -> dict:
+    """Derive aggregate statistics from master records."""
+    total       = len(records)
+    splits      = Counter(r["split"] for r in records)
+    actions     = Counter(r["action_label"] for r in records)
+    categories  = Counter(r["task_category"] for r in records)
+    durations   = [r["duration"] for r in records if r["duration"] > 0]
+    obj_counts  = [len(r["objects_present"]) for r in records]
+    desc_vers   = Counter(r.get("description_version", "none") for r in records)
+
+    return {
+        "total":          total,
+        "train":          splits.get("train", 0),
+        "val":            splits.get("val",   0),
+        "test":           splits.get("test",  0),
+        "n_actions":      len(actions),
+        "action_counts":  dict(actions.most_common()),
+        "task_categories":dict(categories),
+        "avg_duration":   round(sum(durations) / len(durations), 2) if durations else 0,
+        "min_duration":   round(min(durations), 2) if durations else 0,
+        "max_duration":   round(max(durations), 2) if durations else 0,
+        "avg_objects":    round(sum(obj_counts) / len(obj_counts), 1) if obj_counts else 0,
+        "desc_versions":  dict(desc_vers),
+    }
+
+
+def find_example(records: list[dict]) -> dict | None:
+    """Return the first fully populated training record for the example section."""
+    for r in records:
+        if (r.get("split") == "train"
+                and r.get("nl_description")
+                and r.get("objects_present")):
+            return r
+    return records[0] if records else None
+
+
+def render_card(stats: dict, example: dict | None) -> str:
+    """Render the full dataset card as a Markdown string."""
+
+    action_table_rows = "\n".join(
+        f"| `{act}` | {cnt} | {cnt/stats['total']*100:.1f}% |"
+        for act, cnt in sorted(stats["action_counts"].items(), key=lambda x: -x[1])
+    )
+
+    example_json = "{}"
+    if example:
+        display = {
+            "segment_id":    example["segment_id"],
+            "video_path":    example["video_path"],
+            "action_label":  example["action_label"],
+            "start_time":    example["start_time"],
+            "end_time":      example["end_time"],
+            "duration":      example["duration"],
+            "objects_present": example["objects_present"],
+            "nl_description": example["nl_description"],
+            "task_category": example["task_category"],
+            "split":         example["split"],
+        }
+        example_json = json.dumps(display, indent=2)
+
+    today = date.today().isoformat()
+
+    return f"""\
+---
+annotations_creators:
+  - machine-generated
+language_creators:
+  - machine-generated
+language:
+  - en
+license: cc-by-4.0
+multilinguality:
+  - monolingual
+size_categories:
+  - n<1K
+source_datasets:
+  - original
+task_categories:
+  - video-classification
+  - object-detection
+  - text-generation
+task_ids:
+  - action-recognition
+  - egocentric-video-understanding
+  - robotics-imitation-learning
+pretty_name: {DATASET_NAME}
+version: {DATASET_VERSION}
+---
+
+# {DATASET_NAME}
+
+## Dataset Description
+
+**{DATASET_NAME}** is an egocentric (first-person POV) video dataset of kitchen/cooking
+and household cleaning tasks, designed for robotics imitation learning and
+action understanding research. It was created as part of a robotics data hackathon.
+
+Each record links a segmented video clip with:
+- A structured **action label** (e.g. *chopping*, *wiping*)
+- **Object bounding boxes** detected using YOLOv8 + ByteTrack
+- An **NL description** generated by BLIP-2 + Claude 3.5 Sonnet
+- Precise **temporal boundaries** (start/end time and frame)
+
+### Intended Use
+
+This dataset is intended for:
+- **Robot Learning from Demonstration (LfD)** — learning manipulation policies from human videos
+- **Action recognition** in egocentric/first-person video
+- **Vision-Language grounding** research on everyday tasks
+- **Multimodal dataset research** combining video, bounding boxes, and text
+
+---
+
+## Dataset Statistics
+
+| Property | Value |
+|---|---|
+| Total clips | {stats['total']} |
+| Action categories | {stats['n_actions']} |
+| Task categories | {', '.join(stats['task_categories'].keys())} |
+| Avg segment duration | {stats['avg_duration']}s |
+| Min / Max duration | {stats['min_duration']}s / {stats['max_duration']}s |
+| Avg objects per clip | {stats['avg_objects']} |
+| NL description source | {', '.join(f"{k}: {v}" for k, v in stats['desc_versions'].items())} |
+
+### Splits
+
+| Split | Count | % |
+|---|---|---|
+| Train | {stats['train']} | {stats['train']/stats['total']*100:.1f}% |
+| Val   | {stats['val']}   | {stats['val']/stats['total']*100:.1f}% |
+| Test  | {stats['test']}  | {stats['test']/stats['total']*100:.1f}% |
+
+### Action Label Distribution
+
+| Action | Count | % of Dataset |
+|---|---|---|
+{action_table_rows}
+
+---
+
+## Feature Schema
+
+| Column | Type | Description |
+|---|---|---|
+| `segment_id` | string | Unique clip identifier, e.g. `video001_seg003` |
+| `video_id` | string | Parent video identifier |
+| `video_path` | string | Relative path to the MP4 clip |
+| `video_exists` | bool | Whether the clip exists on disk |
+| `action_label` | string | Action class (chopping, washing, etc.) |
+| `start_time` | float32 | Clip start in seconds |
+| `end_time` | float32 | Clip end in seconds |
+| `duration` | float32 | Clip duration in seconds |
+| `start_frame` | int32 | Start frame index |
+| `end_frame` | int32 | End frame index |
+| `objects_present` | list[string] | Unique object classes detected |
+| `bbox_annotations_json` | string | JSON string of per-frame bounding box data |
+| `nl_description` | string | Natural language description of the action |
+| `description_version` | string | `claude-refined` or `template` |
+| `task_category` | ClassLabel | `kitchen` or `cleaning` |
+| `source` | string | Always `custom_recorded` |
+| `split` | string | `train`, `val`, or `test` |
+
+---
+
+## Example Record
+
+```json
+{example_json}
+```
+
+---
+
+## Collection Methodology
+
+Videos were **recorded first-person (egocentric)** using a head- or wrist-mounted camera
+by a human demonstrator performing everyday kitchen and cleaning tasks.
+
+Processing pipeline:
+1. **Exploration** — OpenCV metadata extraction, resolution/duration QA
+2. **Segmentation** — PySceneDetect (content-aware cuts) + CLIP zero-shot action classification
+3. **Object Annotation** — YOLOv8n + ByteTrack for stable bounding boxes across frames
+4. **NL Description** — BLIP-2 Opt-2.7B captions refined by Claude 3.5 Sonnet
+5. **Packaging** — HuggingFace `datasets` library with typed schema
+
+---
+
+## Loading the Dataset
+
+```python
+from datasets import load_from_disk
+import json
+
+dataset = load_from_disk("./hf_dataset")
+train   = dataset["train"]
+
+for example in train:
+    bboxes = json.loads(example["bbox_annotations_json"])
+    print(example["segment_id"], example["action_label"])
+    print(example["nl_description"])
+```
+
+Or use the included convenience loader:
+```bash
+python load_dataset.py
+```
+
+---
+
+## License
+
+This dataset is released under the
+[Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/) license.
+
+You are free to share and adapt the material for any purpose, provided you give
+appropriate credit to the original creators.
+
+---
+
+*Generated automatically on {today} by the EgoKitchen Robotics Pipeline v{DATASET_VERSION}.*
+"""
+
+
+def run() -> None:
+    FINAL_DATASET_DIR.mkdir(parents=True, exist_ok=True)
+
+    print(f"\n{BOLD}Loading master_dataset.json to compute statistics…{RESET}")
+    records = load_master(MASTER_JSON)
+    stats   = compute_stats(records)
+    example = find_example(records)
+
+    card = render_card(stats, example)
+    README_OUT.write_text(card)
+
+    print(f"{GREEN}✔ Dataset card saved → {README_OUT}{RESET}")
+    print(f"  Total segments   : {stats['total']}")
+    print(f"  Action categories: {stats['n_actions']}")
+    print(f"  Avg duration     : {stats['avg_duration']}s\n")
+
+
+if __name__ == "__main__":
+    run()
